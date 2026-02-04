@@ -1,24 +1,30 @@
-# TRD Analysis Progress
+# ALICE TRD Analysis - Electron-Pion Separation
 
-## Date: 2026-02-04
+Master's thesis project on electron-pion separation using the Transition Radiation Detector (TRD) in ALICE.
 
-### What I've Done:
-- Installed O2Physics via CVMFS (no compilation needed!)
-- Opened AO2D.root file from tutor
-- Found TRD data in O2trdextra table
-- Created plots of Q0, Q1, Q2, and total TRD signals
-- Learned ROOT basics: TFile, TTree, TCanvas, TH1F
+## Overview
 
-### Current Status:
-- Need to find MC truth data for electron/pion labeling
-- Waiting for tutor guidance on MC linking
+Using TRD signals (Q0, Q1, Q2) to separate electrons from pions with machine learning techniques.
 
-### Files:
-- explore_trd.C - Main analysis macro
-- trd_all_signals.pdf - Current plots
-- search_mc.C - MC data search script
+## Current Progress
 
-### Next Goals:
-1. Link TRD to MC truth
-2. Plot electrons vs pions separately
-3. Start building BDT features
+- ✅ TRD signal visualization
+- ✅ Q0, Q1, Q2 analysis
+- 🔄 Working on MC truth matching
+
+## Structure
+
+- `macros/` - ROOT analysis scripts
+- `plots/` - Generated figures
+- `docs/` - Documentation
+
+## Usage
+```bash
+alienv enter O2Physics/latest-master-o2
+cd macros
+root -l explore_trd.C
+```
+
+## Author
+
+Madhva Fakare - Physics Master's Student
