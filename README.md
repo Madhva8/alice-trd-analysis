@@ -10,7 +10,28 @@ Using TRD signals (Q0, Q1, Q2) to separate electrons from pions with machine lea
 
 - ✅ TRD signal visualization
 - ✅ Q0, Q1, Q2 analysis
-- 🔄 Working on MC truth matching
+- ✅ Working on MC truth matching
+- ✅ ROOT basics and project setup
+- ✅ Git version control established
+
+## Recent Work (February 2026)
+
+### Learning ROOT Fundamentals
+- Created first ROOT histogram plotting TRD charge signals
+- Established proper project structure with `macros/`, `plots/`, and `docs/` directories
+- Practiced basic ROOT operations: TH1F histograms, TCanvas, styling, and file saving
+- Set up development workflow with VS Code remote connection to lxplus
+
+### Version Control Setup
+- Initialized git repository for thesis project
+- Created GitHub repository: `alice-trd-analysis`
+- Learning git fundamentals: add, commit, push workflow
+- Configured git with CERN email for proper attribution
+
+### Next Steps
+- Continue ROOT tutorials focusing on TTree operations
+- Explore actual TRD data structures in O2Physics
+- Begin understanding TMVA framework for BDT implementation
 
 ## Structure
 
