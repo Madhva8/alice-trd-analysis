@@ -43,7 +43,11 @@ Using TRD signals (Q0, Q1, Q2) to separate electrons from pions with machine lea
 ```bash
 alienv enter O2Physics/latest-master-o2
 cd macros
+# Explore TRD charge signals
 root -l explore_trd.C
+
+# Plot momentum distribution
+root -l plot_momentum.C
 ```
 
 ## Author
