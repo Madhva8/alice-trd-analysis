@@ -2,40 +2,37 @@
  * File: fitBetheBloch.C
  * Author: Madhva Fakare
  *
- * Fits the empirical Bethe-Bloch formula to the pion band
- * in the TPC dE/dx vs momentum plot.
+ * Fits the empirical Bethe-Bloch formula to both the pion and
+ * electron bands in the TPC dE/dx vs momentum plot.
  *
  * Method:
  *   1. Slice the 2D dE/dx histogram into momentum bins
- *   2. Find the most probable value (MPV) in each slice
- *   3. Fit the Bethe-Bloch curve through the MPV points
+ *   2. Extract MPV for pions (global max) and electrons (max above threshold)
+ *   3. Fit Bethe-Bloch curves separately for each species
  *
  * Bethe-Bloch empirical formula (ALICE convention):
  *   f(bg) = P1/beta^P4 * (P2 - beta^P4 - ln(P3 + 1/(bg)^P5))
  *   where bg = betagamma = p/mass
  *
+ * Particle masses (GeV/c^2):
+ *   Pion:     0.13957
+ *   Electron: 0.000511
+ *
  * Run with:
  *   root -l -q macros/fitBetheBloch.C
  */
 
-/* Bethe-Bloch function for ROOT TF1
- * x[0] = momentum p (GeV/c)
- * par[0..4] = P1..P5
- * par[5] = particle mass (GeV/c^2) */
 Double_t BetheBloch(Double_t* x, Double_t* par) {
     Double_t p    = x[0];
     Double_t mass = par[5];
-    Double_t bg   = p / mass;               // betagamma
-    Double_t beta = bg / TMath::Sqrt(1.0 + bg*bg);  // beta = v/c
-
+    Double_t bg   = p / mass;
+    Double_t beta = bg / TMath::Sqrt(1.0 + bg*bg);
     if (beta <= 0 || beta >= 1) return 0;
-
     Double_t P1 = par[0];
     Double_t P2 = par[1];
     Double_t P3 = par[2];
     Double_t P4 = par[3];
     Double_t P5 = par[4];
-
     return (P1 / TMath::Power(beta, P4)) *
            (P2 - TMath::Power(beta, P4) -
             TMath::Log(P3 + TMath::Power(1.0/bg, P5)));
@@ -47,7 +44,6 @@ void fitBetheBloch() {
     gStyle->SetOptFit(0);
     gStyle->SetPalette(kBird);
 
-    /* Load all runs into 2D histogram */
     TH2F* hDeDx = new TH2F("hDeDx",
         "TPC dE/dx vs Momentum - PbPb 2023 All Runs;"
         "p (GeV/c);TPC Signal (a.u.)",
@@ -95,66 +91,93 @@ void fitBetheBloch() {
 
     cout << "Total entries: " << hDeDx->GetEntries() << endl;
 
-    /* Step 1: Extract MPV per momentum bin */
-    /* MPV = most probable value = peak of dE/dx in each momentum slice */
+    /* Extract MPV separately for pions and electrons */
     int nBins = hDeDx->GetNbinsX();
-    vector<Double_t> pVec, dedxVec, errVec;
+    vector<Double_t> pVec_pi, dedxVec_pi, errVec_pi;
+    vector<Double_t> pVec_e,  dedxVec_e,  errVec_e;
 
     for (int i = 1; i <= nBins; i++) {
-        /* Get 1D projection of this momentum slice */
         TH1D* slice = hDeDx->ProjectionY("slice", i, i);
-
         if (slice->GetEntries() < 100) { delete slice; continue; }
 
-        /* Find the bin with maximum content = MPV */
-        int maxBin = slice->GetMaximumBin();
-        Double_t mpv = slice->GetBinCenter(maxBin);
-        Double_t p   = hDeDx->GetXaxis()->GetBinCenter(i);
+        Double_t p = hDeDx->GetXaxis()->GetBinCenter(i);
 
-        /* Error estimate from bin width */
-        Double_t err = slice->GetBinWidth(maxBin);
+        /* Pion MPV — global maximum of the slice */
+        int maxBin_pi = slice->GetMaximumBin();
+        Double_t mpv_pi = slice->GetBinCenter(maxBin_pi);
+        pVec_pi.push_back(p);
+        dedxVec_pi.push_back(mpv_pi);
+        errVec_pi.push_back(slice->GetBinWidth(maxBin_pi));
 
-        pVec.push_back(p);
-        dedxVec.push_back(mpv);
-        errVec.push_back(err);
+        /* Electron MPV — maximum above a momentum-dependent threshold
+         * Electrons at low momentum have much higher dE/dx than pions
+         * The threshold separates the two bands:
+         *   at p=0.1 GeV/c: threshold ~ 170 a.u.
+         *   at p=1.0 GeV/c: threshold ~ 60 a.u. (bands converge)  */
+        Double_t threshold = 120.0 * TMath::Exp(-p * 0.8) + 55.0;
+        int threshBin = slice->FindBin(threshold);
+        int maxBin_e  = threshBin;
+        Double_t maxContent = 0;
+        for (int b = threshBin; b <= slice->GetNbinsX(); b++) {
+            if (slice->GetBinContent(b) > maxContent) {
+                maxContent = slice->GetBinContent(b);
+                maxBin_e   = b;
+            }
+        }
+
+        /* Only store if a meaningful peak was found */
+        if (maxContent > 10) {
+            pVec_e.push_back(p);
+            dedxVec_e.push_back(slice->GetBinCenter(maxBin_e));
+            errVec_e.push_back(slice->GetBinWidth(maxBin_e));
+        }
 
         delete slice;
     }
 
-    cout << "MPV points extracted: " << pVec.size() << endl;
+    cout << "Pion MPV points:    " << pVec_pi.size() << endl;
+    cout << "Electron MPV points:" << pVec_e.size()  << endl;
 
-    /* Create TGraphErrors from MPV points */
-    TGraphErrors* gMPV = new TGraphErrors(
-        pVec.size(),
-        pVec.data(),
-        dedxVec.data(),
-        nullptr,
-        errVec.data());
+    /* TGraphErrors for pions */
+    TGraphErrors* gMPV_pi = new TGraphErrors(
+        pVec_pi.size(), pVec_pi.data(), dedxVec_pi.data(),
+        nullptr, errVec_pi.data());
+    gMPV_pi->SetMarkerStyle(20);
+    gMPV_pi->SetMarkerSize(0.8);
+    gMPV_pi->SetMarkerColor(kRed);
 
-    gMPV->SetMarkerStyle(20);
-    gMPV->SetMarkerSize(0.8);
-    gMPV->SetMarkerColor(kBlack);
-    gMPV->SetLineColor(kBlack);
+    /* TGraphErrors for electrons */
+    TGraphErrors* gMPV_e = new TGraphErrors(
+        pVec_e.size(), pVec_e.data(), dedxVec_e.data(),
+        nullptr, errVec_e.data());
+    gMPV_e->SetMarkerStyle(20);
+    gMPV_e->SetMarkerSize(0.8);
+    gMPV_e->SetMarkerColor(kBlue+1);
 
-    /* Step 2: Fit Bethe-Bloch through MPV points */
-    /* Pion mass = 0.13957 GeV/c^2 */
-    TF1* fitBB = new TF1("fitBB", BetheBloch, 0.1, 5.0, 6);
+    /* Pion Bethe-Bloch fit */
+    TF1* fitBB_pi = new TF1("fitBB_pi", BetheBloch, 0.1, 5.0, 6);
+    fitBB_pi->SetParameters(50.0, 2.5, 1e-3, 2.2, 2.0, 0.13957);
+    fitBB_pi->FixParameter(5, 0.13957);
+    fitBB_pi->SetLineColor(kRed);
+    fitBB_pi->SetLineWidth(2);
+    gMPV_pi->Fit(fitBB_pi, "R");
 
-    /* Initial parameters — typical ALICE values for pions */
-    fitBB->SetParameters(50.0, 2.5, 1e-3, 2.2, 2.0, 0.13957);
-    fitBB->FixParameter(5, 0.13957);  /* fix pion mass */
-    fitBB->SetParName(0, "P1");
-    fitBB->SetParName(1, "P2");
-    fitBB->SetParName(2, "P3");
-    fitBB->SetParName(3, "P4");
-    fitBB->SetParName(4, "P5");
-    fitBB->SetParName(5, "mass");
-    fitBB->SetLineColor(kRed);
-    fitBB->SetLineWidth(2);
+    /* Electron Bethe-Bloch fit — start from pion parameters */
+    TF1* fitBB_e = new TF1("fitBB_e", BetheBloch, 0.1, 5.0, 6);
+    fitBB_e->SetParameters(
+        fitBB_pi->GetParameter(0),
+        fitBB_pi->GetParameter(1),
+        fitBB_pi->GetParameter(2),
+        fitBB_pi->GetParameter(3),
+        fitBB_pi->GetParameter(4),
+        0.000511);
+    fitBB_e->FixParameter(5, 0.000511);
+    fitBB_e->SetLineColor(kBlue+1);
+    fitBB_e->SetLineWidth(2);
+    fitBB_e->SetLineStyle(2);
+    gMPV_e->Fit(fitBB_e, "R");
 
-    gMPV->Fit(fitBB, "R");
-
-    /* Draw everything */
+    /* Draw */
     TCanvas* c1 = new TCanvas("c1", "Bethe-Bloch Fit - PbPb 2023", 900, 700);
     c1->SetLogx();
     c1->SetLogz();
@@ -163,20 +186,27 @@ void fitBetheBloch() {
     c1->SetBottomMargin(0.13);
 
     hDeDx->Draw("COLZ");
-    gMPV->Draw("P same");
-    fitBB->Draw("same");
+    gMPV_pi->Draw("P same");
+    gMPV_e->Draw("P same");
+    fitBB_pi->Draw("same");
+    fitBB_e->Draw("same");
 
-    /* Legend */
-    TLegend* leg = new TLegend(0.45, 0.65, 0.88, 0.88);
+    TLegend* leg = new TLegend(0.42, 0.60, 0.88, 0.88);
     leg->SetBorderSize(0);
-    leg->AddEntry(hDeDx, "TPC dE/dx data", "f");
-    leg->AddEntry(gMPV, "Most Probable Value per bin", "p");
-    leg->AddEntry(fitBB, "Bethe-Bloch fit (#pi^{-} mass)", "l");
+    leg->AddEntry(hDeDx,    "TPC dE/dx data", "f");
+    leg->AddEntry(gMPV_pi,  "MPV - pion band", "p");
+    leg->AddEntry(gMPV_e,   "MPV - electron band", "p");
+    leg->AddEntry(fitBB_pi, "Bethe-Bloch fit (#pi^{#pm}, m=0.140 GeV/c^{2})", "l");
+    leg->AddEntry(fitBB_e,  "Bethe-Bloch fit (e^{#pm}, m=0.511 MeV/c^{2})", "l");
     leg->Draw();
 
-    cout << "\n=== Bethe-Bloch Fit Parameters ===" << endl;
+    cout << "\n=== Pion Bethe-Bloch Fit ===" << endl;
     for (int i = 0; i < 5; i++)
-        cout << "P" << i+1 << " = " << fitBB->GetParameter(i) << endl;
+        cout << "P" << i+1 << " = " << fitBB_pi->GetParameter(i) << endl;
+
+    cout << "\n=== Electron Bethe-Bloch Fit ===" << endl;
+    for (int i = 0; i < 5; i++)
+        cout << "P" << i+1 << " = " << fitBB_e->GetParameter(i) << endl;
 
     c1->Update();
     c1->SaveAs("plots/bethebloch_fit.png");
