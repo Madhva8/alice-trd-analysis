@@ -1,0 +1,20 @@
+{
+    "internal-dpl-clock": "",
+    "internal-dpl-aod-reader": {
+        "aod-file-private": "\/home\/madhvafakare\/alice\/PbPb2023pass5\/PbPb2023pass5\/LHC23zzh_apass5_250514\/AO2D_merge_LHC23zzh.root",
+        "aod-max-io-rate": "0",
+        "time-limit": "0",
+        "orbit-offset-enumeration": "0",
+        "orbit-multiplier-enumeration": "0",
+        "start-value-enumeration": "0",
+        "end-value-enumeration": "-1",
+        "step-value-enumeration": "1"
+    },
+    "internal-dpl-aod-spawner": "",
+    "root-histograms": "",
+    "output-objects": "",
+    "hist-registry": "",
+    "output-obj-set": "",
+    "internal-dpl-aod-global-analysis-file-sink": "",
+    "internal-dpl-injected-dummy-sink": ""
+}
