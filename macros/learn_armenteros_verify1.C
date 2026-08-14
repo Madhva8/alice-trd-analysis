@@ -21,8 +21,15 @@ void learn_armenteros_verify1(){
     // Step 2. Armenteros Plot with color-coded candidate mass window
     TCanvas *cArm = new TCanvas("cArm", "Armenteros-Podolanski", 1000, 800);
     // full population in grey as background reference 
-    tree->Draw("fQtV0:fAlphaV0");
-    cArm->SaveAs("Arm1.png");
-    //tree->Draw("fQtV0:fAlphaV0>>hAll(200,-1,1,200,0,0.3)","","colz");
-    //TH2F *hAll = (TH2F*)gDirectory->Get("hAll");
+    tree->Draw("fQtV0:fAlphaV0>>hAll(200,-1,1,200,0,0.3)","","colz");
+    TH2F *hAll = (TH2F*)gDirectory->Get("hAll");
+    hAll->SetTitle("Armenteros-Podolanski Plot#alpha;q_{T} (GeV/C)");
+    //Verify if those white space are truely emplty
+    Long64_t = nTotal = tree->GetEntries();
+    Long64_t = nWhitePatch = tree->GetEntries("abs(fAlphaV0)<0.2 && fQtV0>0.12 && fQtV0<0.18");
+    printf("\n--- White-space diagnostic ---\n");
+    printf("Entries in patch |alpha|<0.2, 0.12<qT<0.18 (looks white in linear colz): %lld\n", nWhitePatch);
+    printf("Total entries: %lld  (fraction: %.6f)\n", nTotal, (double)nWhitePatch/nTotal);
+    printf("If this is 0 or tiny, the white patch is genuinely empty.\n");
+    printf("If it is a meaningful number, logz below should reveal it.\n\n");
 }

@@ -1,0 +1,145 @@
+#include "TChain.h"
+#include "TFile.h"
+#include "TTree.h"
+#include "TKey.h"
+#include "TSystem.h"
+#include "TSystemDirectory.h"
+#include "TSystemFile.h"
+#include "TString.h"
+#include "TCut.h"
+#include "TMath.h"
+#include <vector>
+// Find every DF_*/O2tpcskimv0wde inside one AO2D file and return the full chain address
+std::vector<TString> findV0Trees(const TString &filePath) {
+    std::vector<TString> paths;
+    TFile *f = TFile::Open(filePath);
+    if (!f || f->IsZombie()){
+        printf(" WARNING: could not open %s, skipping\n",filePath.Data());
+        if (f) f->Close();
+        return paths;
+    }
+    TIter nextKey(f->GetListOfKeys());
+    TKey *key;
+    while((key = (TKey*)nextKey())){
+        TString kname = key->GetName();
+        if(!kname.BeginsWith("DF_")) continue;
+        TDirectory *dir = (TDirectory*)f->Get(kname);
+        if (!dir) continue;
+        if (dir->GetListOfKeys()->FindObject("O2tpcskimv0wde")){
+            paths.push_back(filePath + "/" + kname + "/O2tpcskimv0wde");
+        }
+    }
+    f->Close();
+    return paths;
+}
+void purify_electron1(const char *baseDir = "/home/madhvafakare/alice/PbPb2023pass5/PbPb2023pass5"){
+// Step 1. Discover AO2D_merge_*.root files in run subdirectories
+std::vector<TString> files;
+TSystemDirectory base("base", baseDir);
+TList *entries = base.GetListOfFiles();
+if(!entries){
+    printf("Error: cannot read directory %s\n",baseDir);
+    return;
+}
+TIter nextEntry(entries);
+TSystemFile *entry;
+while ((entry = (TSystemFile*)nextEntry())) {
+    TString name = entry->GetName();
+    if (name == "." || name == "..") continue;
+    if (!entry->IsDirectory()) continue;
+    if (name.EndsWith("_fewRuns")){
+        printf("Skipping subset directory: %s\n", name.Data());
+        continue;
+    }
+    // look inside each run folder for A2OD_merge_*root
+    TString runDir = TString(baseDir) + "/" + name;
+    TSystemDirectory sub("sub", runDir);
+    TList *subEntries = sub.GetListOfFiles();
+    if (!subEntries) continue;
+    TIter nextSub(subEntries);
+    TSystemFile *subEntry;
+    while ((subEntry = (TSystemFile*)nextSub())){
+        TString fname = subEntry->GetName();
+        if (fname.BeginsWith("AO2D_merge_") && fname.EndsWith(".root")) {
+            files.push_back(runDir + "/" + fname);
+        }
+    }
+}
+if (files.empty()){
+    printf("Error: no A02D_merge_*.root found under %s\n", baseDir);
+    printf("Check the base directory path\n");
+    return;
+}
+printf("Found %zu AO2D files(s):\n", files.size());
+for (auto &fp : files) printf(" %s\n", fp.Data());
+printf("\n");
+// Step  2: build one chain over every DF_*/O2tpcskimv0wde 
+TChain *chain = new TChain("O2Tpcskimv0wde");
+int nTreesTotal = 0;
+for (auto &fp : files){
+    std::vector<TString> treePaths = findV0Trees(fp);
+    printf("%s: %zu DF folder(s) with O2Tpcskimv0wde\n", gSystem->BaseName(fp.Data()), treePaths.size());
+    for(auto &tp : treePaths) {
+        chain->Add(tp);
+        nTreesTotal++;
+    }
+}
+printf("\nChained %d tree(s) total.\n",nTreesTotal);
+Long64_t nTotal = chain->GetEntries();
+printf("Total entries across all runs: %lld\n\n", nTotal);
+if (nTotal == 0) {
+    printf("Error: chain is empty, aborting.\n");
+    return;
+}
+// Step 3: The Validate Selection. 1. The values of qTmax = 0.05, and alphaMax = 0.95 are refered from 
+// https://arxiv.org/pdf/1803.09857 pg. 7
+double qTmax = 0.05;
+double alphaMax = 0.95;
+TCut ellipse = Form("TMath::Abs(fAlphaV0)<%f && fQtV0 < %f*TMath::Sqrt(1 - (fAlphaV0*fAlphaV0)/(%f*%f))",
+                    alphaMax,qTmax,alphaMax,alphaMax);
+TCut electronPid = "fPidIndex==0";
+TCut purified = ellipse && electronPid;
+// Step 4: Bookkeeping before the merge. 
+printf("---Per File Bookkeeping---\n");
+printf("%-40s %12s %12s %8s\n", "file","entries","selected","frac");
+for (auto &fp : files) {
+    std::vector<TString> treePaths = findV0Trees(fp);
+    Long64_t nFile = 0, nSel = 0;
+    for (auto &tp : treePaths) {
+        TChain tmp("O2Tpcskimv0wde");
+        tmp.Add(tp);
+        nFile += tmp.GetEntries();
+        nSel += tmp.GetEntries(purified);
+    }
+    printf("%-40s %12lld %12lld %7.2f%%\n",
+            gSystem->BaseName(fp.Data()), nFile, nSel, 
+            nFile > 0? 100.0 * nSel / nFile : 0.0);
+}
+printf("\n");
+// Step 5: write the purified tree, all branches preserved 
+TFile *out = TFile::Open("purified-electron1.root", "RECREATE");
+if (!out || out->IsZombie()) {
+    printf("Error:: cannot create purified-electron1.root\n");
+    return;
+}
+printf("Copying selected entries (this can take a while)...\n");
+TTree *pureTree = chain->CopyTree(purified);
+pureTree->SetName("purifiedElectrons");
+pureTree->SetTitle("Photon-conversion electron candidates, PCM ellipse + fPidIndex==0");
+Long64_t nPure = pureTree->GetEntries();
+pureTree->Write();
+// Step 6: summary + the radius purity indicator for the merged set
+Long64_t nRadius = pureTree->GetEntries("fRadiusV0>15 && fRadiusV0<35");
+printf("\n---Summary---");
+printf("Total entries (all runs):       %lld\n", nTotal);
+printf("Purified electron candidates:    %lld  (%.2f%% of total)\n",
+           nPure, 100.0 * nPure / nTotal);
+printf("In 15-35 cm material window:     %lld  (%.1f%% of purified)\n",
+           nRadius, nPure > 0 ? 100.0 * nRadius / nPure : 0.0);
+printf("Reminder: the radius fraction is a LOWER bound on material-\n");
+printf("conversion purity, the window excludes the beampipe and inner\n");
+printf("ITS layers where real conversions also occur.\n");
+printf("\nOutput written: purified-electron1.root  (tree: purifiedElectrons)\n");
+
+    out->Close();
+}
